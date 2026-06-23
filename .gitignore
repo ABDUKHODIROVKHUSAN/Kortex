@@ -1,0 +1,16 @@
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+.env
+.env.local
+
+uploads/
+chroma_db/
+
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
