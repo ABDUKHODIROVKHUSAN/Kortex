@@ -28,6 +28,7 @@ def _user_response(user: User) -> UserResponse:
         full_name=user.full_name,
         phone=user.phone,
         avatar_url=user.avatar_url,
+        subscription_tier=user.subscription_tier or "free",
     )
 
 

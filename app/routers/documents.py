@@ -10,6 +10,7 @@ from app.database import async_session, get_db
 from app.models import Document, User
 from app.schemas.document import DocumentResponse, DocumentUpdate
 from app.utils.auth import get_current_user
+from app.services.tiers import is_format_allowed
 from app.utils.file_handler import delete_file, get_document_path, save_upload_file
 
 router = APIRouter()
@@ -26,11 +27,10 @@ def _detect_file_type(filename: str | None, content_type: str | None) -> str | N
     ext = Path(filename or "").suffix.lower()
     if ext == ".pdf" or content_type == "application/pdf":
         return "pdf"
-    if ext == ".docx" or content_type in {
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/msword",
-    }:
+    if ext == ".docx" or content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return "docx"
+    if ext == ".doc" or content_type == "application/msword":
+        return "doc"
     return None
 
 
@@ -61,8 +61,12 @@ async def _process_document(doc_id: UUID, user_id: str, file_path: Path, file_ty
             doc_id_str = str(doc_id)
             if file_type == "pdf":
                 pages = parser.parse_pdf(str(file_path))
-            else:
+            elif file_type == "docx":
                 pages = parser.parse_docx(str(file_path))
+            else:
+                doc.status = "error"
+                await db.commit()
+                return
 
             chunks = parser.chunk_text(pages, doc_id_str)
             if not chunks:
@@ -98,7 +102,23 @@ async def upload_document(
     if not file_type:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PDF and DOCX files are allowed",
+            detail="Unsupported file type",
+        )
+
+    if not is_format_allowed(current_user.subscription_tier, file_type):
+        if file_type == "docx":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="DOCX uploads are only available on Pro and Business plans. Upgrade now.",
+            )
+        if file_type == "doc":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="DOC uploads are only available on the Business plan. Upgrade now.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This file type is not available on your plan. Upgrade now.",
         )
 
     content = await file.read()

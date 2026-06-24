@@ -19,6 +19,9 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subscription_tier: Mapped[str] = mapped_column(
+        String(32), default="free", server_default="free"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

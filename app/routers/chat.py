@@ -48,7 +48,7 @@ async def chat_usage(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    data = await usage_service.get_usage(db, current_user.id)
+    data = await usage_service.get_usage(db, current_user.id, current_user.subscription_tier)
     return {
         "success": True,
         "data": data,
@@ -149,7 +149,7 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
 ):
     doc = await _get_user_document(doc_id, current_user, db)
-    await usage_service.ensure_can_chat(db, current_user.id)
+    await usage_service.ensure_can_chat(db, current_user.id, current_user.subscription_tier)
 
     history_result = await db.execute(
         select(ChatMessage)
@@ -173,6 +173,7 @@ async def chat_stream(
 
     user_id = current_user.id
     document_id = doc.id
+    subscription_tier = current_user.subscription_tier
 
     async def event_generator():
         from app.database import async_session
@@ -201,7 +202,9 @@ async def chat_stream(
                     sources=sources or [],
                 )
                 session.add(assistant_msg)
-                usage_data = await usage_service.record_chat_usage(session, user_id, tokens)
+                usage_data = await usage_service.record_chat_usage(
+                    session, user_id, subscription_tier, tokens
+                )
                 await session.commit()
 
             yield f"data: {json.dumps({'type': 'done', 'sources': sources or [], 'usage': usage_data})}\n\n"

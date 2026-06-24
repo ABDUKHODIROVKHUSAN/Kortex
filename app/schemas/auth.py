@@ -20,6 +20,7 @@ class UserResponse(BaseModel):
     full_name: str
     phone: str | None = None
     avatar_url: str | None = None
+    subscription_tier: str = "free"
 
 
 class UpdateProfileRequest(BaseModel):
