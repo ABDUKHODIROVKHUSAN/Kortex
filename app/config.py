@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 10080
     UPLOAD_DIR: str = "./uploads"
     CHROMA_DIR: str = "./chroma_db"
-    CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:3000,https://kortex-frontend.vercel.app"
 
     @property
     def claude_enabled(self) -> bool:
