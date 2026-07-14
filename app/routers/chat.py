@@ -172,19 +172,27 @@ async def chat_stream(
     await db.flush()
 
     user_id = current_user.id
+    user_email = current_user.email
     document_id = doc.id
     subscription_tier = current_user.subscription_tier
 
     async def event_generator():
         from app.database import async_session
         from app.services.agent import stream_chat
+        from app.services.admin_failures import record_system_failure
 
         full_response = ""
         sources: list | None = None
         usage_data: dict | None = None
 
         try:
-            async for token, src in stream_chat(str(doc_id), query, history):
+            async for token, src in stream_chat(
+                str(doc_id),
+                query,
+                history,
+                user_id=user_id,
+                user_email=user_email,
+            ):
                 if token:
                     full_response += token
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
@@ -209,6 +217,17 @@ async def chat_stream(
 
             yield f"data: {json.dumps({'type': 'done', 'sources': sources or [], 'usage': usage_data})}\n\n"
         except Exception as exc:
+            try:
+                await record_system_failure(
+                    message=str(exc),
+                    error_type="chat_stream_failed",
+                    user_id=user_id,
+                    user_email=user_email,
+                    document_id=document_id,
+                    query_preview=query,
+                )
+            except Exception:
+                pass
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
 
     return StreamingResponse(

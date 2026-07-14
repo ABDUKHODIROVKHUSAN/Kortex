@@ -1,10 +1,28 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+_PASSWORD_RULE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,}$")
+
+
+def validate_password_strength(password: str) -> str:
+    if not _PASSWORD_RULE.match(password):
+        raise ValueError(
+            "Your password is weak. Use at least 8 characters with both letters and numbers."
+        )
+    return password
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     full_name: str = Field(min_length=1)
+
+    @field_validator("password")
+    @classmethod
+    def password_must_be_strong(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class LoginRequest(BaseModel):
@@ -21,6 +39,7 @@ class UserResponse(BaseModel):
     phone: str | None = None
     avatar_url: str | None = None
     subscription_tier: str = "free"
+    is_admin: bool = False
 
 
 class UpdateProfileRequest(BaseModel):

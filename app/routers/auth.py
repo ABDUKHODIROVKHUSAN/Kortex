@@ -29,6 +29,7 @@ def _user_response(user: User) -> UserResponse:
         phone=user.phone,
         avatar_url=user.avatar_url,
         subscription_tier=user.subscription_tier or "free",
+        is_admin=bool(getattr(user, "is_admin", False)),
     )
 
 
@@ -45,6 +46,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
         email=body.email,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
+        is_admin=False,
     )
     db.add(user)
     await db.flush()

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     CHROMA_DIR: str = "./chroma_db"
     CORS_ORIGINS: str = "http://localhost:3000,https://kortex-frontend.vercel.app"
+    ADMIN_EMAIL: str = "officialabdukhodirov@gmail.com"
+    ADMIN_PASSWORD: str = "sentry2020"
+    ADMIN_FULL_NAME: str = "Admin"
 
     @property
     def claude_enabled(self) -> bool:

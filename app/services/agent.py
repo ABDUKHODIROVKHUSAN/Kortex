@@ -163,10 +163,16 @@ async def _stream_mock_response(
 
 
 async def stream_chat(
-    doc_id: str, query: str, history: list[dict] | None = None
+    doc_id: str,
+    query: str,
+    history: list[dict] | None = None,
+    *,
+    user_id: Any = None,
+    user_email: str | None = None,
 ) -> AsyncGenerator[tuple[str, list[dict] | None], None]:
     """Yield (token_or_event, sources). Final yield has sources."""
     from app.services import rag
+    from app.services.admin_failures import record_system_failure
 
     chunks = rag.retrieve_context(doc_id, query)
     context = rag.format_context(chunks)
@@ -195,7 +201,19 @@ async def stream_chat(
             import logging
 
             logging.getLogger(__name__).exception("Gemini API error")
-            async for item in _stream_text_response(_gemini_error_message(exc), sources):
+            error_text = _gemini_error_message(exc)
+            try:
+                await record_system_failure(
+                    message=error_text.replace("**", ""),
+                    error_type="gemini_request_failed",
+                    user_id=user_id,
+                    user_email=user_email,
+                    document_id=doc_id,
+                    query_preview=query,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to record admin failure")
+            async for item in _stream_text_response(error_text, sources):
                 yield item
             return
         yield "", sources
@@ -265,7 +283,19 @@ async def stream_chat(
         import logging
 
         logging.getLogger(__name__).exception("Claude API error")
-        async for item in _stream_text_response(_claude_error_message(exc), sources):
+        error_text = _claude_error_message(exc)
+        try:
+            await record_system_failure(
+                message=error_text.replace("**", ""),
+                error_type="claude_request_failed",
+                user_id=user_id,
+                user_email=user_email,
+                document_id=doc_id,
+                query_preview=query,
+            )
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to record admin failure")
+        async for item in _stream_text_response(error_text, sources):
             yield item
         return
 
