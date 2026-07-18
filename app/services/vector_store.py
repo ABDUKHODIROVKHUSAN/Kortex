@@ -43,7 +43,6 @@ def add_document(
 def search(
     doc_id: str, query_embedding: list[float], top_k: int = 5
 ) -> list[dict]:
-    """Dense-only vector search (kept for summarize / tooling)."""
     client = get_chroma_client()
     name = _collection_name(doc_id)
 
@@ -70,36 +69,10 @@ def search(
                 "text": doc,
                 "metadata": metadata,
                 "distance": distance,
-                "retrieval_method": "vector",
             }
         )
 
     return chunks
-
-
-def hybrid_search(
-    doc_id: str,
-    query: str,
-    query_embedding: list[float],
-    top_k: int = 5,
-) -> list[dict]:
-    """Dense + BM25 hybrid search with RRF fusion."""
-    from app.services.hybrid_search import hybrid_search as _hybrid
-
-    client = get_chroma_client()
-    name = _collection_name(doc_id)
-
-    try:
-        collection = client.get_collection(name=name)
-    except Exception:
-        return []
-
-    return _hybrid(
-        query=query,
-        query_embedding=query_embedding,
-        collection=collection,
-        top_k=top_k,
-    )
 
 
 def delete_document(doc_id: str) -> None:

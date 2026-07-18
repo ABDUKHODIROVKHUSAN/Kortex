@@ -4,30 +4,14 @@ from typing import Any
 
 from app.config import settings
 
-SYSTEM_PROMPT_BASE = """You are KORTEX, an expert AI document analyst. You help users understand their documents thoroughly and accurately.
+SYSTEM_PROMPT = """You are KORTEX, an expert AI document analyst. You help users understand their documents thoroughly and accurately.
 
 When answering:
 1. Always base your answer on the retrieved document context provided
 2. Cite specific sections using [Page X] or [Section Y] references
 3. If the answer is not in the document, clearly say so
+4. Be concise but thorough
 5. Format your answers with clear structure when appropriate"""
-
-STYLE_INSTRUCTIONS = {
-    "concise": "4. Keep answers short and direct — prefer bullet points over long paragraphs",
-    "detailed": "4. Be thorough — explain context, nuance, and implications when relevant",
-}
-
-
-def _system_prompt(response_style: str = "detailed") -> str:
-    style = STYLE_INSTRUCTIONS.get(response_style, STYLE_INSTRUCTIONS["detailed"])
-    return SYSTEM_PROMPT_BASE.replace(
-        "5. Format your answers with clear structure when appropriate",
-        f"{style}\n5. Format your answers with clear structure when appropriate",
-    )
-
-
-# Backward-compatible alias
-SYSTEM_PROMPT = _system_prompt("detailed")
 
 
 def _get_client() -> Any:
@@ -39,8 +23,7 @@ def _get_client() -> Any:
 def search_document(query: str, doc_id: str) -> list[dict]:
     from app.services import rag
 
-    chunks, _meta = rag.retrieve_context(doc_id, query)
-    return chunks
+    return rag.retrieve_context(doc_id, query)
 
 
 def summarize_document(doc_id: str, n_chunks: int = 8) -> str:
@@ -154,33 +137,29 @@ def _claude_error_message(exc: Exception) -> str:
 
 
 async def _stream_text_response(
-    text: str, sources: list[dict], retrieval: dict | None = None
-) -> AsyncGenerator[tuple[str, list[dict] | None, dict | None], None]:
+    text: str, sources: list[dict]
+) -> AsyncGenerator[tuple[str, list[dict] | None], None]:
     for word in text.split(" "):
-        yield word + " ", None, None
+        yield word + " ", None
         await asyncio.sleep(0.01)
-    yield "", sources, retrieval
+    yield "", sources
 
 
 async def _stream_mock_response(
-    query: str,
-    chunks: list[dict],
-    sources: list[dict],
-    retrieval: dict | None = None,
-) -> AsyncGenerator[tuple[str, list[dict] | None, dict | None], None]:
+    query: str, chunks: list[dict], sources: list[dict]
+) -> AsyncGenerator[tuple[str, list[dict] | None], None]:
     preview = chunks[0]["text"][:120] + "..." if chunks else "No matching chunks found."
     response = (
         "**[Dev mode — no LLM configured]**\n\n"
         f"You asked: *{query}*\n\n"
-        "RAG retrieval is working (hybrid: BM25 + vectors). "
-        "Here is the top matched excerpt from your document:\n\n"
+        "RAG retrieval is working. Here is the top matched excerpt from your document:\n\n"
         f"> {preview}\n\n"
         "Add `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` to `backend/.env` and restart the server."
     )
     for word in response.split(" "):
-        yield word + " ", None, None
+        yield word + " ", None
         await asyncio.sleep(0.02)
-    yield "", sources, retrieval
+    yield "", sources
 
 
 async def stream_chat(
@@ -190,14 +169,12 @@ async def stream_chat(
     *,
     user_id: Any = None,
     user_email: str | None = None,
-    response_style: str = "detailed",
-) -> AsyncGenerator[tuple[str, list[dict] | None, dict | None], None]:
-    """Yield (token, sources, retrieval_meta). Final yield has sources + retrieval."""
+) -> AsyncGenerator[tuple[str, list[dict] | None], None]:
+    """Yield (token_or_event, sources). Final yield has sources."""
     from app.services import rag
     from app.services.admin_failures import record_system_failure
 
-    prompt = _system_prompt(response_style)
-    chunks, retrieval = rag.retrieve_context(doc_id, query)
+    chunks = rag.retrieve_context(doc_id, query)
     context = rag.format_context(chunks)
     sources = [
         {
@@ -205,14 +182,12 @@ async def stream_chat(
             "page": c.get("metadata", {}).get("page"),
             "paragraph_index": c.get("metadata", {}).get("paragraph_index"),
             "chunk_index": c.get("metadata", {}).get("chunk_index"),
-            "score": round(c["rrf_score"], 4) if c.get("rrf_score") is not None else None,
-            "retrieval_method": c.get("retrieval_method", "hybrid"),
         }
         for c in chunks
     ]
 
     if not settings.llm_enabled:
-        async for item in _stream_mock_response(query, chunks, sources, retrieval):
+        async for item in _stream_mock_response(query, chunks, sources):
             yield item
         return
 
@@ -220,8 +195,8 @@ async def stream_chat(
         from app.services.gemini_llm import _gemini_error_message, stream_gemini_chat
 
         try:
-            async for text in stream_gemini_chat(context, query, history, prompt):
-                yield text, None, None
+            async for text in stream_gemini_chat(context, query, history, SYSTEM_PROMPT):
+                yield text, None
         except Exception as exc:
             import logging
 
@@ -238,10 +213,10 @@ async def stream_chat(
                 )
             except Exception:
                 logging.getLogger(__name__).exception("Failed to record admin failure")
-            async for item in _stream_text_response(error_text, sources, retrieval):
+            async for item in _stream_text_response(error_text, sources):
                 yield item
             return
-        yield "", sources, retrieval
+        yield "", sources
         return
 
     messages: list[dict] = []
@@ -266,12 +241,12 @@ async def stream_chat(
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=4096,
-            system=prompt,
+            system=SYSTEM_PROMPT,
             messages=messages,
             tools=TOOLS,
         ) as stream:
             for text in stream.text_stream:
-                yield text, None, None
+                yield text, None
 
         final = stream.get_final_message()
 
@@ -296,12 +271,12 @@ async def stream_chat(
             with client.messages.stream(
                 model="claude-sonnet-4-6",
                 max_tokens=4096,
-                system=prompt,
+                system=SYSTEM_PROMPT,
                 messages=messages,
                 tools=TOOLS,
             ) as stream:
                 for text in stream.text_stream:
-                    yield text, None, None
+                    yield text, None
 
             final = stream.get_final_message()
     except Exception as exc:
@@ -320,8 +295,8 @@ async def stream_chat(
             )
         except Exception:
             logging.getLogger(__name__).exception("Failed to record admin failure")
-        async for item in _stream_text_response(error_text, sources, retrieval):
+        async for item in _stream_text_response(error_text, sources):
             yield item
         return
 
-    yield "", sources, retrieval
+    yield "", sources

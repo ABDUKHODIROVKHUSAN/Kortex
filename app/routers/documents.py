@@ -2,17 +2,7 @@ import asyncio
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-    status,
-)
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,14 +34,6 @@ def _detect_file_type(filename: str | None, content_type: str | None) -> str | N
     return None
 
 
-def _clamp_chunk_settings(chunk_size: int, chunk_overlap: int) -> tuple[int, int]:
-    size = max(256, min(2048, int(chunk_size)))
-    overlap = max(0, min(200, int(chunk_overlap)))
-    if overlap >= size:
-        overlap = max(0, size // 10)
-    return size, overlap
-
-
 def _doc_response(doc: Document) -> dict:
     return DocumentResponse(
         id=str(doc.id),
@@ -64,8 +46,6 @@ def _doc_response(doc: Document) -> dict:
         chunk_count=doc.chunk_count,
         progress_percent=getattr(doc, "progress_percent", 0) or 0,
         progress_stage=getattr(doc, "progress_stage", "queued") or "queued",
-        chunk_size=getattr(doc, "chunk_size", 500) or 500,
-        chunk_overlap=getattr(doc, "chunk_overlap", 50) or 50,
         created_at=doc.created_at.isoformat(),
     ).model_dump()
 
@@ -76,17 +56,8 @@ async def _set_progress(db: AsyncSession, doc: Document, percent: int, stage: st
     await db.commit()
 
 
-async def _process_document(
-    doc_id: UUID,
-    user_id: str,
-    file_path: Path,
-    file_type: str,
-    chunk_size: int = 500,
-    chunk_overlap: int = 50,
-) -> None:
+async def _process_document(doc_id: UUID, user_id: str, file_path: Path, file_type: str) -> None:
     from app.services import embeddings, parser, vector_store
-
-    chunk_size, chunk_overlap = _clamp_chunk_settings(chunk_size, chunk_overlap)
 
     async with async_session() as db:
         result = await db.execute(select(Document).where(Document.id == doc_id))
@@ -110,9 +81,7 @@ async def _process_document(
                 return
 
             await _set_progress(db, doc, 18, "chunking")
-            chunks = await asyncio.to_thread(
-                parser.chunk_text, pages, doc_id_str, chunk_size, chunk_overlap
-            )
+            chunks = await asyncio.to_thread(parser.chunk_text, pages, doc_id_str)
             if not chunks:
                 doc.status = "error"
                 doc.progress_stage = "error"
@@ -160,8 +129,6 @@ async def _process_document(
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    chunk_size: int = Form(500),
-    chunk_overlap: int = Form(50),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -196,7 +163,6 @@ async def upload_document(
         )
 
     await file.seek(0)
-    chunk_size, chunk_overlap = _clamp_chunk_settings(chunk_size, chunk_overlap)
 
     stored_name, file_path = await save_upload_file(str(current_user.id), file)
 
@@ -209,20 +175,12 @@ async def upload_document(
         status="processing",
         progress_percent=3,
         progress_stage="queued",
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
     )
     db.add(doc)
     await db.flush()
 
     background_tasks.add_task(
-        _process_document,
-        doc.id,
-        str(current_user.id),
-        file_path,
-        file_type,
-        chunk_size,
-        chunk_overlap,
+        _process_document, doc.id, str(current_user.id), file_path, file_type
     )
 
     return {
@@ -270,39 +228,6 @@ async def get_document(
         "data": _doc_response(doc),
         "message": "Document retrieved",
     }
-
-
-@router.get("/{doc_id}/file")
-async def download_document_file(
-    doc_id: UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Stream the original uploaded file (used by the in-app PDF citation viewer)."""
-    result = await db.execute(
-        select(Document).where(
-            Document.id == doc_id, Document.user_id == current_user.id
-        )
-    )
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-
-    file_path = get_document_path(str(current_user.id), doc.filename)
-    if not file_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on disk")
-
-    media = (
-        "application/pdf"
-        if doc.file_type == "pdf"
-        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-    return FileResponse(
-        path=str(file_path),
-        media_type=media,
-        filename=doc.original_name,
-        headers={"Cache-Control": "private, max-age=3600"},
-    )
 
 
 @router.patch("/{doc_id}")

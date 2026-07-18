@@ -1,27 +1,8 @@
-import time
-
-
-def retrieve_context(
-    doc_id: str, query: str, top_k: int = 5
-) -> tuple[list[dict], dict]:
-    """
-    Hybrid retrieve relevant chunks for a document query.
-    Returns (chunks, retrieval_meta).
-    """
+def retrieve_context(doc_id: str, query: str, top_k: int = 5) -> list[dict]:
     from app.services import embeddings, vector_store
 
-    started = time.perf_counter()
     query_embedding = embeddings.embed_query(query)
-    chunks = vector_store.hybrid_search(doc_id, query, query_embedding, top_k=top_k)
-    latency_ms = int((time.perf_counter() - started) * 1000)
-
-    meta = {
-        "method": "hybrid",
-        "top_k": top_k,
-        "chunk_count": len(chunks),
-        "latency_ms": latency_ms,
-    }
-    return chunks, meta
+    return vector_store.search(doc_id, query_embedding, top_k=top_k)
 
 
 def format_context(chunks: list[dict]) -> str:
