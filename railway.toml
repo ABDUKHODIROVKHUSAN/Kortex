@@ -1,9 +1,0 @@
-# Railway: use Nixpacks by default (ignore Dockerfile) so deploys match
-# the previous working setup. Set RAILWAY_DOCKERFILE_PATH only if you
-# intentionally want the Docker image build.
-[build]
-builder = "NIXPACKS"
-
-[deploy]
-startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-restartPolicyType = "ON_FAILURE"
