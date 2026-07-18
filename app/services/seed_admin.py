@@ -19,6 +19,23 @@ async def ensure_admin_schema() -> None:
         )
 
 
+async def ensure_document_schema() -> None:
+    """Add chunk settings columns if the DB was created before they existed."""
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "ALTER TABLE documents "
+                "ADD COLUMN IF NOT EXISTS chunk_size INTEGER NOT NULL DEFAULT 500"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE documents "
+                "ADD COLUMN IF NOT EXISTS chunk_overlap INTEGER NOT NULL DEFAULT 50"
+            )
+        )
+
+
 async def ensure_admin_user() -> None:
     email = settings.ADMIN_EMAIL.strip().lower()
     password = settings.ADMIN_PASSWORD

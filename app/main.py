@@ -11,7 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import create_tables
 from app.routers import admin, analytics, auth, billing, chat, documents, support
-from app.services.seed_admin import ensure_admin_schema, ensure_admin_user
+from app.services.seed_admin import (
+    ensure_admin_schema,
+    ensure_admin_user,
+    ensure_document_schema,
+)
 
 
 @asynccontextmanager
@@ -19,12 +23,13 @@ async def lifespan(app: FastAPI):
     await create_tables()
     try:
         await ensure_admin_schema()
+        await ensure_document_schema()
         await ensure_admin_user()
     except Exception:
         # Don't block API startup if seed fails; log and continue.
         import logging
 
-        logging.getLogger(__name__).exception("Failed to seed admin user")
+        logging.getLogger(__name__).exception("Failed to seed admin / document schema")
     yield
 
 
