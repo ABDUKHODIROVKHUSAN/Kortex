@@ -12,6 +12,10 @@ class DocumentResponse(BaseModel):
     file_size: int
     status: str
     chunk_count: int
+    progress_percent: int = 0
+    progress_stage: str = "queued"
+    chunk_size: int = 500
+    chunk_overlap: int = 50
     created_at: str
 
 

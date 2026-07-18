@@ -28,12 +28,6 @@ async def upgrade_tier(
             detail="Invalid tier. Must be one of: free, pro, business",
         )
 
-    if tier == "free":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot downgrade via this endpoint",
-        )
-
     try:
         current_user.subscription_tier = tier
         await db.flush()
@@ -43,9 +37,10 @@ async def upgrade_tier(
             detail="Failed to update subscription tier",
         ) from exc
 
+    action = "Switched to" if tier == "free" else "Upgraded to"
     return UpgradeTierResponse(
         success=True,
-        message=f"Upgraded to {_tier_label(tier)}",
+        message=f"{action} {_tier_label(tier)}",
         userTier=tier,
     )
 

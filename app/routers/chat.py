@@ -145,6 +145,7 @@ async def chat_sessions(
 async def chat_stream(
     doc_id: UUID = Query(...),
     query: str = Query(..., min_length=1),
+    response_style: str = Query("detailed", pattern="^(concise|detailed)$"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -183,21 +184,25 @@ async def chat_stream(
 
         full_response = ""
         sources: list | None = None
+        retrieval: dict | None = None
         usage_data: dict | None = None
 
         try:
-            async for token, src in stream_chat(
+            async for token, src, meta in stream_chat(
                 str(doc_id),
                 query,
                 history,
                 user_id=user_id,
                 user_email=user_email,
+                response_style=response_style,
             ):
                 if token:
                     full_response += token
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
                 if src is not None:
                     sources = src
+                if meta is not None:
+                    retrieval = meta
 
             tokens = usage_service.estimate_tokens(query, full_response)
 
@@ -215,7 +220,7 @@ async def chat_stream(
                 )
                 await session.commit()
 
-            yield f"data: {json.dumps({'type': 'done', 'sources': sources or [], 'usage': usage_data})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'sources': sources or [], 'usage': usage_data, 'retrieval': retrieval})}\n\n"
         except Exception as exc:
             try:
                 await record_system_failure(
